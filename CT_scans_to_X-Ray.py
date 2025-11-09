@@ -365,6 +365,10 @@ def process_single_patient_all_projections(patient_dir, base_dir, idx):
 def visualize_annotations(image_path, label_path, output_dir, class_names):
     # Визуализация YOLO-разметки поверх DRR для проверки качества
     image = cv2.imread(str(image_path))
+    if image is None:
+        print(f"Не удалось загрузить изображение: {image_path}")
+        return None
+        
     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
     h, w = image.shape[:2]
     vis_image = image.copy()
@@ -372,7 +376,7 @@ def visualize_annotations(image_path, label_path, output_dir, class_names):
     label_file = Path(label_path)
     if not label_file.exists():
         print(f"Файл разметки не найден: {label_path}")
-        return
+        return None
     
     with open(label_file, 'r') as f:
         lines = f.readlines()
@@ -393,7 +397,8 @@ def visualize_annotations(image_path, label_path, output_dir, class_names):
         
         if len(polygon_points) >= 3:
             polygon = np.array(polygon_points, np.int32)
-            color = np.random.randint(0, 255, 3).tolist()
+            # Фиксированные цвета вместо случайных
+            color = [(class_id * 50) % 255, (class_id * 30) % 255, (class_id * 70) % 255]
             cv2.polylines(vis_image, [polygon], True, color, 2)
             centroid = polygon.mean(axis=0).astype(int)
             class_name = class_names.get(class_id + 1, str(class_id))
@@ -405,8 +410,8 @@ def visualize_annotations(image_path, label_path, output_dir, class_names):
     cv2.imwrite(str(output_path), cv2.cvtColor(vis_image, cv2.COLOR_RGB2BGR))
     return vis_image
 
-def check_annotation_quality(work_dir, num_samples=10):
-    # Проверка разметки на случайной выборке из сгенерированных данных
+def check_annotation_quality(work_dir):
+    # Проверка разметки на ВСЕХ сгенерированных данных
     images_dir = Path(work_dir) / "synthetic_xrays" / "images"
     labels_dir = Path(work_dir) / "synthetic_xrays" / "labels"
     output_dir = Path(work_dir) / "validation_vis"
@@ -418,18 +423,26 @@ def check_annotation_quality(work_dir, num_samples=10):
         print("Нет изображений для проверки")
         return
     
-    sample_files = np.random.choice(image_files, min(num_samples, len(image_files)), replace=False)
+    print(f"Найдено {len(image_files)} изображений для обработки")
     
-    for image_path in sample_files:
+    processed_count = 0
+    missing_labels_count = 0
+    
+    for image_path in image_files:
         label_path = labels_dir / f"{image_path.stem}.txt"
         if not label_path.exists():
             print(f"Нет разметки для {image_path.name}")
+            missing_labels_count += 1
             continue
             
         visualize_annotations(image_path, label_path, output_dir, VERTEBRA_LABELS)
-        print(f"Проверено: {image_path.name}")
+        processed_count += 1
+        print(f"Обработано: {image_path.name} ({processed_count}/{len(image_files)})")
     
-    print(f"\nРезультаты проверки сохранены в: {output_dir}")
+    print(f"\nОбработка завершена!")
+    print(f"Всего обработано: {processed_count} изображений")
+    print(f"Отсутствует разметка для: {missing_labels_count} изображений")
+    print(f"Результаты проверки сохранены в: {output_dir}")
 
 def main():
     # Основной пайплайн: загрузка → обработка → генерация → архивация → валидация
